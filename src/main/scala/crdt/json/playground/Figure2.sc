@@ -1,4 +1,5 @@
 import crdt.json.playground.CRDTNodeToJson._
+import crdt.json.playground.RegisterConflictResolver.ListAll
 import eu.timepit.crjdt.core.Replica
 import eu.timepit.crjdt.core.syntax._
 
@@ -17,7 +18,6 @@ p0.document.toJson
 //    "blue" : "#0000ff"
 //  }
 //}
-
 val q0 = merge(Replica.empty("q"), p0)
 q0.document.toJson
 //{
@@ -25,8 +25,6 @@ q0.document.toJson
 //    "blue" : "#0000ff"
 //  }
 //}
-
-
 val p1 = p0.applyCmd(colors.downField("red") := "#ff0000")
 p1.document.toJson
 //{
@@ -35,18 +33,15 @@ p1.document.toJson
 //    "red" : "#ff0000"
 //  }
 //}
-
 val q1 = q0
   .applyCmd(colors := `{}`)
   .applyCmd(colors.downField("green") := "#00ff00")
-
 q1.document.toJson
 //{
 //  "colors" : {
 //    "green" : "#00ff00"
 //  }
 //}
-
 val p2 = merge(p1, q1)
 p2.document.toJson
 //{

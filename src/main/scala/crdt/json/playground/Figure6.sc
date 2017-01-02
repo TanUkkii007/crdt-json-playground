@@ -1,4 +1,5 @@
 import crdt.json.playground.CRDTNodeToJson._
+import crdt.json.playground.RegisterConflictResolver.ListAll
 import eu.timepit.crjdt.core._
 import eu.timepit.crjdt.core.syntax._
 
