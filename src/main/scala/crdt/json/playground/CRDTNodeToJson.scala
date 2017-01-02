@@ -3,9 +3,7 @@ package crdt.json.playground
 import eu.timepit.crjdt.core.Node.{ListNode, MapNode, RegNode}
 import eu.timepit.crjdt.core._
 import io.circe.Json
-import io.circe.Json._
-import scala.collection.SortedMap
-import scala.collection.immutable.Iterable
+import scala.annotation.tailrec
 
 trait CRDTNodeToJson {
 
@@ -16,44 +14,61 @@ trait CRDTNodeToJson {
       }
     } else {
       val fields = mapNode.entries.collect {
-        case (TypeTag.MapT(Key.StrK(key)), node: MapNode) => key -> mapToJson(node)
-        case (TypeTag.ListT(Key.StrK(key)), node: ListNode) => key -> listToJson(node)
-        case (TypeTag.RegT(Key.StrK(key)), node: RegNode) if node.values.nonEmpty => key -> registerToJson(node)
+        case (TypeTag.MapT(Key.StrK(key)), node: MapNode) if mapNode.getPres(Key.StrK(key)).nonEmpty =>
+          key -> mapToJson(node)
+        case (TypeTag.ListT(Key.StrK(key)), node: ListNode) if mapNode.getPres(Key.StrK(key)).nonEmpty =>
+          key -> listToJson(node)
+        case (TypeTag.RegT(Key.StrK(key)), node: RegNode) if mapNode.getPres(Key.StrK(key)).nonEmpty =>
+          key -> registerToJson(node)
       }
       Json.fromFields(fields)
     }
   }
 
   def listToJson(listNode: ListNode): Json = {
-    val jsons = listNode.entries.map {
-      case (TypeTag.MapT(key), node: MapNode) => mapToJson(node)
-      case (TypeTag.ListT(key), node: ListNode) => listToJson(node)
-      case (TypeTag.RegT(key), node: RegNode) => registerToJson(node)
-    }
-    Json.fromValues(jsons)
-//    SortedMap(listNode.order.toSeq: _*)(new Ordering[ListRef] {
-//      override def compare(x: ListRef, y: ListRef): Int = {
-//        case (ListRef.IdR(id1), ListRef.IdR(id2)) => Id.orderingId.compare(id1, id2)
-//        case (ListRef.HeadR, _) =>
-//      }
-//    })
-  }
-
-  def registerToJson(regNode: RegNode): Json = {
-    val items = regNode.values.map {
-      case (id, value) => value match {
-        case Val.False => Json.False
-        case Val.True => Json.True
-        case Val.Null => Json.Null
-        case Val.Num(n) => Json.fromBigDecimal(n)
-        case Val.Str(s) => Json.fromString(s)
+    @tailrec
+    def loopOrder(listRef: ListRef, keyOrder: Vector[Key]): Vector[Key] = {
+      listRef match {
+        case keyRef: KeyRef =>
+          val key = keyRef.toKey
+          val next = listNode.order(keyRef)
+          if (listNode.getPres(key).nonEmpty) {
+            loopOrder(next, keyOrder :+ key)
+          } else {
+            loopOrder(next, keyOrder)
+          }
+        case ListRef.TailR => keyOrder
       }
     }
-    items match {
-      case Nil => Json.Null
-      case head :: Nil => head
-      case list => Json.fromString(list.map(_.toString()).mkString(" / "))
+    val keyOrder = loopOrder(ListRef.HeadR, Vector.empty).zipWithIndex.toMap
+    val jsons = new Array[Json](keyOrder.size)
+    listNode.entries.foreach {
+      case (TypeTag.MapT(key), node: MapNode) if listNode.getPres(key).nonEmpty =>
+        jsons(keyOrder(key)) = mapToJson(node)
+      case (TypeTag.ListT(key), node: ListNode) if listNode.getPres(key).nonEmpty =>
+        jsons(keyOrder(key)) = listToJson(node)
+      case (TypeTag.RegT(key), node: RegNode) if listNode.getPres(key).nonEmpty =>
+        jsons(keyOrder(key)) = registerToJson(node)
     }
+    Json.fromValues(jsons)
+  }
+
+  // ToDo: implement conflict resolver
+  def registerToJson(regNode: RegNode): Json = {
+    def replicaIdToKey(id: Id): String = s"${id.p}:${id.c}"
+    val fields: Map[String, Json] = regNode.values.map {
+      case (id, value) =>
+        val key = replicaIdToKey(id)
+        val v = value match {
+          case Val.False => Json.False
+          case Val.True => Json.True
+          case Val.Null => Json.Null
+          case Val.Num(n) => Json.fromBigDecimal(n)
+          case Val.Str(s) => Json.fromString(s)
+        }
+        (key, v)
+    }
+    Json.obj(fields.toSeq: _*)
   }
 }
 
